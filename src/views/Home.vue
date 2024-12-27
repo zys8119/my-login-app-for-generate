@@ -20,7 +20,7 @@
 <script setup lang="ts">
 import { useRouter } from 'vue-router'
 import { NCard, NIcon } from 'naive-ui'
-import { GameController, Brush } from '@vicons/ionicons5'
+import { GameController, Brush, GridOutline } from '@vicons/ionicons5'
 
 const router = useRouter()
 
@@ -30,6 +30,12 @@ const routes = [
         title: '俄罗斯方块',
         description: '经典的俄罗斯方块游戏，使用键盘控制方块移动和旋转。',
         icon: GameController
+    },
+    {
+        path: '/2048',
+        title: '2048',
+        description: '经典的2048数字游戏，使用方向键合并相同数字。',
+        icon: GridOutline
     },
     {
         path: '/canvas',
