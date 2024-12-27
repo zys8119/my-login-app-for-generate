@@ -2,6 +2,7 @@ import { createRouter, createWebHistory, RouteRecordRaw } from 'vue-router'
 import Login from '../views/Login.vue'
 import Home from '../views/Home.vue'
 import Canvas from '../views/Canvas.vue'
+import Tetris from '../views/Tetris.vue'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -22,6 +23,11 @@ const routes: RouteRecordRaw[] = [
     path: '/canvas',
     name: 'Canvas',
     component: Canvas
+  },
+  {
+    path: '/tetris',
+    name: 'Tetris',
+    component: Tetris
   }
 ]
 
