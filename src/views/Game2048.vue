@@ -145,19 +145,20 @@ const getCellStyle = (x: number, y: number) => {
         return {
             left: `${x * 95}px`,
             top: `${y * 95}px`,
-            transform: `translate(${(x - prev.x) * 100}%, ${(y - prev.y) * 100}%)`,
-            transition: 'transform 150ms ease-in-out'
+            transform: `translate(${(x - prev.x) * 100}%, ${(y - prev.y) * 100}%) scale(1)`,
+            transition: 'transform 150ms ease-in-out, background-color 150ms ease-in-out'
         }
     }
 
     return {
         left: `${x * 95}px`,
-        top: `${y * 95}px`
+        top: `${y * 95}px`,
+        transform: 'scale(1)'
     }
 }
 
 // 移动和合并方块
-const moveTiles = (direction: 'left' | 'right' | 'up' | 'down') => {
+const moveTiles = async (direction: 'left' | 'right' | 'up' | 'down') => {
     // 记录移动前的位置
     const oldBoard = board.value.map(row => [...row])
     let moved = false
@@ -176,7 +177,7 @@ const moveTiles = (direction: 'left' | 'right' | 'up' | 'down') => {
     }
 
     // 处理单行或单列
-    const processLine = (line: number[]) => {
+    const processLine = async (line: number[]) => {
         // 根据方向决定是否反转
         const shouldReverse = direction === 'right' || direction === 'down'
         if (shouldReverse) line.reverse()
@@ -190,6 +191,8 @@ const moveTiles = (direction: 'left' | 'right' | 'up' | 'down') => {
                 points += numbers[i]
                 numbers.splice(i + 1, 1)
                 merged = true
+                // 添加短暂延迟让动画更流畅
+                await new Promise(resolve => setTimeout(resolve, 50))
             }
         }
 
@@ -202,8 +205,8 @@ const moveTiles = (direction: 'left' | 'right' | 'up' | 'down') => {
 
     // 处理所有行或列
     const lines = getLines()
-    lines.forEach(({ line, index }) => {
-        const { numbers, merged } = processLine(line)
+    for (const { line, index } of lines) {
+        const { numbers, merged } = await processLine(line)
         const hasChanged = merged || JSON.stringify(line) !== JSON.stringify(numbers)
         if (hasChanged) moved = true
 
@@ -215,7 +218,7 @@ const moveTiles = (direction: 'left' | 'right' | 'up' | 'down') => {
                 board.value[i][index] = num
             })
         }
-    })
+    }
 
     // 如果发生了移动，保存位置信息用于动画
     if (moved) {
@@ -412,10 +415,27 @@ onMounted(() => {
 
 .tile {
     will-change: transform;
+    transition: transform 150ms ease-in-out, background-color 150ms ease-in-out;
 }
 
 .tile-new {
     animation: appear 0.15s ease-in-out;
+}
+
+@keyframes merge {
+    0% {
+        transform: scale(1);
+    }
+    50% {
+        transform: scale(1.2);
+    }
+    100% {
+        transform: scale(1);
+    }
+}
+
+.tile[class*="tile-"] {
+    animation: merge 150ms ease-in-out;
 }
 
 @keyframes appear {
