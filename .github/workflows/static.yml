@@ -26,6 +26,4 @@ jobs:
 
       - name: Deploy
         uses: actions/deploy-pages@v4
-        with:
-          folder: dist # Vite 默认的构建输出目录
-          branch: gh-pages # 部署到 gh-pages 分支
+        id: deployment
