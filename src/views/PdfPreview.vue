@@ -52,7 +52,7 @@
         </div>
         <div class="preview-container">
             <template v-if="pdfUrl">
-                <div class="pdf-container" ref="containerRef">
+                <div class="pdf-container" ref="containerRef" @wheel="handleWheel">
                     <canvas ref="canvasRef" class="pdf-canvas"></canvas>
                     <canvas ref="annotationCanvasRef" class="annotation-canvas" @mousedown="startAnnotation"
                         @mousemove="draw" @mouseup="stopAnnotation" @mouseleave="stopAnnotation"
@@ -573,6 +573,29 @@ const textInputStyle = computed(() => {
         transformOrigin: 'left top'
     }
 })
+
+// 添加防抖的页面切换函数
+const debouncedChangePage = debounce(async (newPage: number) => {
+    if (newPage >= 1 && newPage <= totalPages.value) {
+        currentPage.value = newPage
+        await renderPage(newPage)
+    }
+}, 100)
+
+// 处理滚轮事件
+const handleWheel = (e: WheelEvent) => {
+    // 防止事件冒泡和默认行为
+    e.preventDefault()
+
+    // 判断滚动方向
+    const delta = Math.sign(e.deltaY)
+
+    // 计算新的页码
+    const newPage = currentPage.value + delta
+
+    // 使用防抖函数切换页面
+    debouncedChangePage(newPage)
+}
 </script>
 
 <style scoped>
@@ -679,6 +702,8 @@ canvas {
     display: flex;
     justify-content: center;
     align-items: center;
+    overflow: hidden;
+    /* 防止滚动条出现 */
 }
 
 .pdf-canvas,
