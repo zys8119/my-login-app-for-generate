@@ -35,7 +35,7 @@
                             </n-button>
                         </n-button-group>
                         <n-color-picker v-model:value="annotationColor" :show-alpha="false" :show-preview="true"
-                            :show-input="false" style="width: 40px" />
+                            :show-input="false" :actions="[]" class="color-picker-button" />
                     </n-space>
                 </div>
                 <div class="right-controls">
@@ -71,7 +71,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch, shallowRef } from 'vue'
+import { ref, computed, onMounted, watch, shallowRef, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { NEmpty, NText, NButton, NSpace, NInputNumber, NSelect, NButtonGroup, NDivider, NColorPicker, NIcon } from 'naive-ui'
 import * as pdfjsLib from 'pdfjs-dist'
@@ -86,21 +86,26 @@ const canvasRef = ref<HTMLCanvasElement | null>(null)
 const pdfDoc = shallowRef<any>(null)
 const currentPage = ref(1)
 const totalPages = ref(0)
-const scale = ref(1.5)
+const scale = ref<number | 'auto'>('auto')
 const loading = ref(false)
 
 const scaleOptions = [
+    { label: '自动适应', value: 'auto' },
     { label: '50%', value: 0.5 },
     { label: '75%', value: 0.75 },
     { label: '100%', value: 1.0 },
     { label: '150%', value: 1.5 },
     { label: '200%', value: 2.0 },
-]
+] as const
 
 // 从URL参数中获取PDF文件地址
 const pdfUrl = computed(() => route.query.file as string)
 
+// 添加窗口尺寸响应
 const containerRef = ref<HTMLDivElement | null>(null)
+const containerHeight = ref(0)
+const containerWidth = ref(0)
+
 const annotationCanvasRef = ref<HTMLCanvasElement | null>(null)
 const annotationMode = ref<'draw' | 'text' | null>(null)
 const annotationColor = ref('#FF0000')
@@ -174,25 +179,68 @@ const clearAnnotations = () => {
     annotations.value.delete(currentPage.value)
 }
 
+// 计算最佳缩放比例
+const calculateScale = (pageWidth: number, pageHeight: number) => {
+    if (!containerRef.value) return 1.0
+
+    const rect = containerRef.value.getBoundingClientRect()
+    const padding = 40
+    const maxWidth = rect.width - padding
+    const maxHeight = rect.height - padding
+
+    const widthScale = maxWidth / pageWidth
+    const heightScale = maxHeight / pageHeight
+
+    return Math.min(widthScale, heightScale)
+}
+
+// 获取实际使用的缩放值
+const getEffectiveScale = (pageWidth: number, pageHeight: number) => {
+    if (scale.value === 'auto') {
+        return calculateScale(pageWidth, pageHeight)
+    }
+    return scale.value
+}
+
+// 添加当前渲染任务的引用
+let currentRenderTask: any = null
+
 // 修改渲染页面函数
 const renderPage = async (pageNum: number) => {
     if (!pdfDoc.value || !canvasRef.value || !annotationCanvasRef.value) return
 
     try {
+        // 取消之前的渲染任务，但不等待它完成
+        if (currentRenderTask) {
+            currentRenderTask.cancel()
+            currentRenderTask = null
+        }
+
         const pageProxy = await pdfDoc.value.getPage(pageNum)
         const canvas = canvasRef.value
         const ctx = canvas.getContext('2d')
         if (!ctx) return
 
-        const viewport = pageProxy.getViewport({ scale: scale.value })
+        // 获取原始页面尺寸
+        const originalViewport = pageProxy.getViewport({ scale: 1.0 })
 
-        // 设置PDF画布尺寸
+        // 获取实际缩放值
+        const effectiveScale = scale.value === 'auto'
+            ? calculateScale(originalViewport.width, originalViewport.height)
+            : scale.value
+
+        const viewport = pageProxy.getViewport({ scale: effectiveScale })
+
+        // 设置画布尺寸
         canvas.width = viewport.width
         canvas.height = viewport.height
-
-        // 设置批注画布尺寸
         annotationCanvasRef.value.width = viewport.width
         annotationCanvasRef.value.height = viewport.height
+
+        // 清除画布
+        ctx.clearRect(0, 0, canvas.width, canvas.height)
+        const annotationCtx = annotationCanvasRef.value.getContext('2d')
+        annotationCtx?.clearRect(0, 0, canvas.width, canvas.height)
 
         const renderContext = {
             canvasContext: ctx,
@@ -202,21 +250,67 @@ const renderPage = async (pageNum: number) => {
         }
 
         try {
-            await pageProxy.render(renderContext).promise
+            // 开始新的渲染任务
+            const renderTask = pageProxy.render(renderContext)
+            currentRenderTask = renderTask
 
-            // 恢复该页的批注
-            const savedAnnotation = annotations.value.get(pageNum)
-            if (savedAnnotation) {
-                const annotationCtx = annotationCanvasRef.value.getContext('2d')
-                annotationCtx?.putImageData(savedAnnotation, 0, 0)
+            // 等待渲染完成
+            await renderTask.promise
+
+            // 只有当当前任务没有被取消时才恢复批注
+            if (currentRenderTask === renderTask) {
+                const savedAnnotation = annotations.value.get(pageNum)
+                if (savedAnnotation && annotationCtx) {
+                    annotationCtx.putImageData(savedAnnotation, 0, 0)
+                }
             }
-        } catch (renderError) {
-            console.error('Render error:', renderError)
+        } catch (error) {
+            // 忽略取消渲染的错误
+            if (error instanceof Error &&
+                error.message !== 'Rendering cancelled' &&
+                !error.message.includes('RenderingCancelledException')) {
+                console.error('Render error:', error)
+            }
         }
     } catch (error) {
         console.error('Error getting page:', error)
     }
 }
+
+// 添加防抖函数
+const debounce = (fn: Function, delay: number) => {
+    let timeoutId: NodeJS.Timeout
+    return (...args: any[]) => {
+        clearTimeout(timeoutId)
+        timeoutId = setTimeout(() => fn(...args), delay)
+    }
+}
+
+// 使用防抖处理窗口大小变化
+const debouncedUpdateContainerSize = debounce(() => {
+    if (!containerRef.value || scale.value !== 'auto') return
+    renderPage(currentPage.value)
+}, 200)
+
+// 修改监听函数
+watch([currentPage, scale], async ([newPage]) => {
+    await renderPage(newPage)
+}, { flush: 'post' })
+
+// 修改窗口大小变化监听
+onMounted(() => {
+    if (pdfUrl.value) {
+        loadPDF()
+    }
+    window.addEventListener('resize', debouncedUpdateContainerSize)
+})
+
+onUnmounted(() => {
+    if (currentRenderTask) {
+        currentRenderTask.cancel()
+    }
+    window.removeEventListener('resize', debouncedUpdateContainerSize)
+})
 
 // 加载PDF文档
 const loadPDF = async () => {
@@ -253,27 +347,20 @@ const loadPDF = async () => {
     }
 }
 
-const prevPage = () => {
+// 修改页面切换函数
+const prevPage = async () => {
     if (currentPage.value > 1) {
         currentPage.value--
+        await renderPage(currentPage.value)
     }
 }
 
-const nextPage = () => {
+const nextPage = async () => {
     if (currentPage.value < totalPages.value) {
         currentPage.value++
+        await renderPage(currentPage.value)
     }
 }
-
-// 监听页面变化
-watch(currentPage, () => {
-    renderPage(currentPage.value)
-})
-
-// 监听缩放变化
-watch(scale, () => {
-    renderPage(currentPage.value)
-})
 
 // 监听URL变化
 watch(pdfUrl, () => {
@@ -287,12 +374,6 @@ const isDarkTheme = ref(false)
 const toggleTheme = () => {
     isDarkTheme.value = !isDarkTheme.value
 }
-
-onMounted(() => {
-    if (pdfUrl.value) {
-        loadPDF()
-    }
-})
 </script>
 
 <style scoped>
@@ -317,16 +398,16 @@ onMounted(() => {
     max-width: 1200px;
     margin: 0 auto;
     padding: 20px;
-    min-height: calc(100vh - 80px);
+    height: calc(100vh - 80px);
     background-color: #fff;
     border-radius: 4px;
     box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
     position: relative;
     z-index: 1;
-    overflow-y: auto;
-    /* 只允许垂直滚动 */
-    overflow-x: hidden;
-    /* 禁止水平滚动 */
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .pdf-controls {
@@ -394,22 +475,21 @@ canvas {
 
 .pdf-container {
     position: relative;
-    margin: 0 auto;
+    width: 100%;
+    height: 100%;
     display: flex;
     justify-content: center;
-    width: 100%;
-    /* 改为100%宽度 */
-    min-height: fit-content;
+    align-items: center;
 }
 
 .pdf-canvas,
 .annotation-canvas {
     position: absolute;
-    top: 0;
+    top: 50%;
     left: 50%;
-    /* 恢复居中定位 */
-    transform: translateX(-50%);
-    /* 恢复居中定位 */
+    transform: translate(-50%, -50%);
+    max-width: 100%;
+    max-height: 100%;
 }
 
 .annotation-canvas {
@@ -445,7 +525,27 @@ canvas {
 
 :deep(.n-color-picker) {
     flex-shrink: 0;
-    min-width: 40px;
+}
+
+:deep(.n-color-picker .n-color-picker-trigger) {
+    width: 34px !important;
+    height: 34px !important;
+    border-radius: 3px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+:deep(.n-color-picker-trigger__fill) {
+    width: 24px !important;
+    height: 24px !important;
+    margin: 0 !important;
+    border-radius: 2px;
+}
+
+:deep(.n-color-picker-trigger__value) {
+    display: none !important;
 }
 
 :deep(.n-button) {
