@@ -34,7 +34,8 @@
                                 清除
                             </n-button>
                         </n-button-group>
-                        <n-color-picker v-model:value="annotationColor" :show-alpha="false" style="width: 40px" />
+                        <n-color-picker v-model:value="annotationColor" :show-alpha="false" :show-preview="true"
+                            :show-input="false" style="width: 40px" />
                     </n-space>
                 </div>
                 <div class="right-controls">
@@ -322,6 +323,10 @@ onMounted(() => {
     box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
     position: relative;
     z-index: 1;
+    overflow-y: auto;
+    /* 只允许垂直滚动 */
+    overflow-x: hidden;
+    /* 禁止水平滚动 */
 }
 
 .pdf-controls {
@@ -392,7 +397,9 @@ canvas {
     margin: 0 auto;
     display: flex;
     justify-content: center;
-    /* 水平居中 */
+    width: 100%;
+    /* 改为100%宽度 */
+    min-height: fit-content;
 }
 
 .pdf-canvas,
@@ -400,12 +407,21 @@ canvas {
     position: absolute;
     top: 0;
     left: 50%;
-    /* 配合transform实现居中 */
+    /* 恢复居中定位 */
     transform: translateX(-50%);
+    /* 恢复居中定位 */
 }
 
 .annotation-canvas {
     z-index: 1;
+    pointer-events: auto;
+    /* 确保可以接收鼠标事件 */
+}
+
+/* 确保画布容器不会被压缩 */
+canvas {
+    display: block;
+    max-width: none;
 }
 
 .controls-container {
