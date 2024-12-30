@@ -174,19 +174,42 @@ const draw = (e: MouseEvent) => {
     lastY.value = y
 }
 
-// 停止绘制
+// 修改停止批注函数
+const stopAnnotation = (e: MouseEvent) => {
+    if (annotationMode.value === 'draw') {
+        stopDrawing()
+    }
+}
+
+// 修改停止绘制函数
 const stopDrawing = () => {
     if (isDrawing.value && annotationCanvasRef.value) {
-        // 保存当前页的批注
+        isDrawing.value = false
+
+        // 获取当前页的批注
+        let pageAnnotations = annotations.value.get(currentPage.value)
+        if (!pageAnnotations) {
+            pageAnnotations = {
+                imageData: new ImageData(1, 1), // 临时数据
+                texts: []
+            }
+        }
+
+        // 保存当前画布状态
         const imageData = annotationCanvasRef.value
             .getContext('2d')
-            ?.getImageData(0, 0, annotationCanvasRef.value.width, annotationCanvasRef.value.height)
+            ?.getImageData(
+                0,
+                0,
+                annotationCanvasRef.value.width,
+                annotationCanvasRef.value.height
+            )
 
         if (imageData) {
-            annotations.value.set(currentPage.value, imageData)
+            pageAnnotations.imageData = imageData
+            annotations.value.set(currentPage.value, pageAnnotations)
         }
     }
-    isDrawing.value = false
 }
 
 // 清除当前页批注
@@ -197,6 +220,7 @@ const clearAnnotations = () => {
 
     ctx.clearRect(0, 0, annotationCanvasRef.value.width, annotationCanvasRef.value.height)
     annotations.value.delete(currentPage.value)
+    showTextInput.value = false // 确保文字输入框被关闭
 }
 
 // 计算最佳缩放比例
@@ -279,9 +303,21 @@ const renderPage = async (pageNum: number) => {
 
             // 只有当当前任务没有被取消时才恢复批注
             if (currentRenderTask === renderTask) {
-                const savedAnnotation = annotations.value.get(pageNum)
-                if (savedAnnotation && annotationCtx) {
-                    annotationCtx.putImageData(savedAnnotation, 0, 0)
+                const pageAnnotations = annotations.value.get(pageNum)
+                if (pageAnnotations) {
+                    const annotationCtx = annotationCanvasRef.value.getContext('2d')
+                    if (annotationCtx) {
+                        // 恢复图像数据
+                        annotationCtx.putImageData(pageAnnotations.imageData, 0, 0)
+
+                        // 重新渲染文字批注
+                        pageAnnotations.texts.forEach(text => {
+                            annotationCtx.font = '16px Arial'
+                            annotationCtx.fillStyle = text.color
+                            annotationCtx.textBaseline = 'top'
+                            annotationCtx.fillText(text.text, text.x, text.y)
+                        })
+                    }
                 }
             }
         } catch (error) {
