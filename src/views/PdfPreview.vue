@@ -1,10 +1,9 @@
 <template>
-    <div class="pdf-preview">
-        <h1>PDF在线预览</h1>
-        <div class="preview-container">
-            <template v-if="pdfUrl">
-                <div class="pdf-controls">
-                    <n-space>
+    <div class="pdf-preview" :class="{ 'dark-theme': isDarkTheme }">
+        <div class="pdf-controls">
+            <div class="controls-container">
+                <div class="left-controls">
+                    <n-space align="center">
                         <n-button @click="prevPage" :disabled="currentPage <= 1">上一页</n-button>
                         <n-input-number v-model:value="currentPage" :min="1" :max="totalPages" />
                         <span>/ {{ totalPages }}</span>
@@ -35,9 +34,23 @@
                                 清除
                             </n-button>
                         </n-button-group>
-                        <n-color-picker v-model:value="annotationColor" :show-alpha="false" />
+                        <n-color-picker v-model:value="annotationColor" :show-alpha="false" style="width: 40px" />
                     </n-space>
                 </div>
+                <div class="right-controls">
+                    <n-button circle @click="toggleTheme">
+                        <template #icon>
+                            <n-icon>
+                                <moon-outline v-if="!isDarkTheme" />
+                                <sunny-outline v-else />
+                            </n-icon>
+                        </template>
+                    </n-button>
+                </div>
+            </div>
+        </div>
+        <div class="preview-container">
+            <template v-if="pdfUrl">
                 <div class="pdf-container" ref="containerRef">
                     <canvas ref="canvasRef" class="pdf-canvas"></canvas>
                     <canvas ref="annotationCanvasRef" class="annotation-canvas" @mousedown="startDrawing"
@@ -52,6 +65,7 @@
                 </n-empty>
             </template>
         </div>
+        <div class="background-layer"></div>
     </div>
 </template>
 
@@ -61,7 +75,7 @@ import { useRoute } from 'vue-router'
 import { NEmpty, NText, NButton, NSpace, NInputNumber, NSelect, NButtonGroup, NDivider, NColorPicker, NIcon } from 'naive-ui'
 import * as pdfjsLib from 'pdfjs-dist'
 import workerSrc from 'pdfjs-dist/build/pdf.worker.js?url'
-import { Pencil, TextOutline, TrashOutline } from '@vicons/ionicons5'
+import { Pencil, TextOutline, TrashOutline, MoonOutline, SunnyOutline } from '@vicons/ionicons5'
 
 // 使用本地的 worker 文件
 pdfjsLib.GlobalWorkerOptions.workerSrc = workerSrc
@@ -265,6 +279,14 @@ watch(pdfUrl, () => {
     loadPDF()
 })
 
+// 添加深色主题状态
+const isDarkTheme = ref(false)
+
+// 切换主题
+const toggleTheme = () => {
+    isDarkTheme.value = !isDarkTheme.value
+}
+
 onMounted(() => {
     if (pdfUrl.value) {
         loadPDF()
@@ -274,46 +296,185 @@ onMounted(() => {
 
 <style scoped>
 .pdf-preview {
-    padding: 20px;
+    min-height: 100vh;
+    padding-top: 60px;
+    position: relative;
+    /* 移除背景色，由background-layer提供 */
+}
+
+.background-layer {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #f5f5f5;
+    z-index: -1;
 }
 
 .preview-container {
-    margin-top: 20px;
-    min-height: 500px;
-    border: 1px solid #ddd;
-    border-radius: 4px;
+    max-width: 1200px;
+    margin: 0 auto;
     padding: 20px;
+    min-height: calc(100vh - 80px);
     background-color: #fff;
+    border-radius: 4px;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+    position: relative;
+    z-index: 1;
 }
 
 .pdf-controls {
-    margin-bottom: 20px;
-    padding: 10px;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    padding: 10px 20px;
+    background-color: #fff;
     border-bottom: 1px solid #eee;
     display: flex;
     align-items: center;
     gap: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
-.pdf-canvas {
-    display: block;
-    margin: 0 auto;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+/* 深色主题样式 */
+.dark-theme .background-layer {
+    background-color: #18181c;
+}
+
+.dark-theme .preview-container {
+    background-color: #242424;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.2);
+}
+
+.dark-theme .pdf-controls {
+    background-color: #242424;
+    border-bottom-color: #333;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.dark-theme .n-button:not(.n-button--primary) {
+    background-color: #333;
+    border-color: #444;
+    color: #fff;
+}
+
+.dark-theme .n-input-number {
+    background-color: #333;
+    border-color: #444;
+    color: #fff;
+}
+
+.dark-theme .n-select {
+    background-color: #333;
+    border-color: #444;
+    color: #fff;
+}
+
+.dark-theme canvas {
+    filter: brightness(0.9) contrast(1.1);
+    /* 调整PDF在深色主题下的显示效果 */
+}
+
+/* 添加平滑过渡效果 */
+.pdf-preview,
+.preview-container,
+.pdf-controls,
+.background-layer,
+canvas {
+    transition: all 0.3s ease;
 }
 
 .pdf-container {
     position: relative;
     margin: 0 auto;
+    display: flex;
+    justify-content: center;
+    /* 水平居中 */
 }
 
 .pdf-canvas,
 .annotation-canvas {
     position: absolute;
     top: 0;
-    left: 0;
+    left: 50%;
+    /* 配合transform实现居中 */
+    transform: translateX(-50%);
 }
 
 .annotation-canvas {
     z-index: 1;
+}
+
+.controls-container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    max-width: 1200px;
+    margin: 0 auto;
+    gap: 16px;
+}
+
+.left-controls {
+    flex: 1;
+    min-width: 0;
+}
+
+.right-controls {
+    flex-shrink: 0;
+}
+
+:deep(.n-color-picker) {
+    flex-shrink: 0;
+    min-width: 40px;
+}
+
+:deep(.n-button) {
+    white-space: nowrap;
+}
+
+/* 修改深色主题下的组件样式 */
+.dark-theme :deep(.n-base-selection) {
+    background-color: #fff !important;
+    border-color: #eee !important;
+}
+
+.dark-theme :deep(.n-input-number-base) {
+    background-color: #fff !important;
+    border-color: #eee !important;
+}
+
+.dark-theme :deep(.n-input__input-el) {
+    color: #000 !important;
+}
+
+.dark-theme :deep(.n-base-selection-label) {
+    color: #000 !important;
+}
+
+.dark-theme :deep(.n-base-selection-tags) {
+    color: #000 !important;
+}
+
+/* 保持下拉菜单选项的深色主题 */
+.dark-theme :deep(.n-base-selection-menu) {
+    background-color: #242424 !important;
+    border-color: #333 !important;
+}
+
+.dark-theme :deep(.n-base-selection-option) {
+    color: #fff !important;
+}
+
+.dark-theme :deep(.n-base-selection-option--selected) {
+    background-color: #333 !important;
+}
+
+/* 调整分页数字的颜色 */
+.dark-theme span {
+    color: #fff;
 }
 </style>
