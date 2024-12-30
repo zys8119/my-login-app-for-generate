@@ -406,64 +406,113 @@ const editingTextIndex = ref<number>(-1)
 const startAnnotation = (e: MouseEvent) => {
     if (!annotationMode.value || !annotationCanvasRef.value) return
 
+    const canvas = annotationCanvasRef.value
+    const rect = canvas.getBoundingClientRect()
+    const scaleX = canvas.width / rect.width
+    const scaleY = canvas.height / rect.height
+    const x = (e.clientX - rect.left) * scaleX
+    const y = (e.clientY - rect.top) * scaleY
+
     if (annotationMode.value === 'draw') {
         startDrawing(e)
     } else if (annotationMode.value === 'text') {
-        const canvas = annotationCanvasRef.value
-        const rect = canvas.getBoundingClientRect()
-
-        // 计算相对于画布的实际位置
-        const scaleX = canvas.width / rect.width
-        const scaleY = canvas.height / rect.height
-
-        // 计算鼠标在画布上的实际位置
-        const x = (e.clientX - rect.left) * scaleX
-        const y = (e.clientY - rect.top) * scaleY
-
         textPosition.value = { x, y }
         showTextInput.value = true
-
-        // 等待 DOM 更新后聚焦输入框
+        editingTextIndex.value = -1 // 新建文字批注
+        textContent.value = '' // 清空内容
         nextTick(() => {
             textInputRef.value?.focus()
         })
     }
 }
 
-// 修改停止批注函数
-const stopAnnotation = (e: MouseEvent) => {
-    if (annotationMode.value === 'draw') {
-        stopDrawing()
+// 添加双击编辑功能
+const handleCanvasDoubleClick = (e: MouseEvent) => {
+    if (!annotationCanvasRef.value) return
+
+    const canvas = annotationCanvasRef.value
+    const rect = canvas.getBoundingClientRect()
+    const scaleX = canvas.width / rect.width
+    const scaleY = canvas.height / rect.height
+    const x = (e.clientX - rect.left) * scaleX
+    const y = (e.clientY - rect.top) * scaleY
+
+    const pageAnnotations = annotations.value.get(currentPage.value)
+    if (!pageAnnotations?.texts) return
+
+    // 查找点击的文字批注
+    const clickedTextIndex = pageAnnotations.texts.findIndex(text => {
+        const textWidth = canvas.getContext('2d')?.measureText(text.text).width || 0
+        return (
+            x >= text.x - 5 &&
+            x <= text.x + textWidth + 5 &&
+            y >= text.y - 20 &&
+            y <= text.y + 5
+        )
+    })
+
+    if (clickedTextIndex !== -1) {
+        const text = pageAnnotations.texts[clickedTextIndex]
+        textPosition.value = { x: text.x, y: text.y }
+        textContent.value = text.text
+        editingTextIndex.value = clickedTextIndex
+        showTextInput.value = true
+        nextTick(() => {
+            textInputRef.value?.focus()
+        })
     }
 }
 
-// 确认文字批注
+// 修改确认文字批注函数
 const confirmTextAnnotation = () => {
     if (!textContent.value.trim() || !annotationCanvasRef.value) return
 
-    const ctx = annotationCanvasRef.value.getContext('2d')
+    const canvas = annotationCanvasRef.value
+    const ctx = canvas.getContext('2d')
     if (!ctx) return
 
-    // 设置文字样式
-    ctx.font = '16px Arial'
-    ctx.fillStyle = annotationColor.value
-    ctx.textBaseline = 'top'
+    // 获取当前页的批注
+    let pageAnnotations = annotations.value.get(currentPage.value)
+    if (!pageAnnotations) {
+        pageAnnotations = {
+            imageData: ctx.getImageData(0, 0, canvas.width, canvas.height),
+            texts: []
+        }
+    }
 
-    // 绘制文字
-    ctx.fillText(textContent.value, textPosition.value.x, textPosition.value.y)
+    // 创建或更新文字批注
+    const textAnnotation: TextAnnotation = {
+        x: textPosition.value.x,
+        y: textPosition.value.y,
+        text: textContent.value,
+        color: annotationColor.value
+    }
 
-    // 保存批注
-    const imageData = ctx.getImageData(
-        0,
-        0,
-        annotationCanvasRef.value.width,
-        annotationCanvasRef.value.height
-    )
-    annotations.value.set(currentPage.value, imageData)
+    if (editingTextIndex.value === -1) {
+        // 新建文字批注
+        pageAnnotations.texts.push(textAnnotation)
+    } else {
+        // 更新现有文字批注
+        pageAnnotations.texts[editingTextIndex.value] = textAnnotation
+    }
+
+    // 重新渲染所有批注
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+    pageAnnotations.texts.forEach(text => {
+        ctx.font = '16px Arial'
+        ctx.fillStyle = text.color
+        ctx.textBaseline = 'top'
+        ctx.fillText(text.text, text.x, text.y)
+    })
+
+    // 更新批注数据
+    pageAnnotations.imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+    annotations.value.set(currentPage.value, pageAnnotations)
 
     // 重置状态
     showTextInput.value = false
     textContent.value = ''
+    editingTextIndex.value = -1
 }
 
 // 修改文字输入容器的样式计算
