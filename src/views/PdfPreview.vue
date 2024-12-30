@@ -54,8 +54,14 @@
             <template v-if="pdfUrl">
                 <div class="pdf-container" ref="containerRef">
                     <canvas ref="canvasRef" class="pdf-canvas"></canvas>
-                    <canvas ref="annotationCanvasRef" class="annotation-canvas" @mousedown="startDrawing"
-                        @mousemove="draw" @mouseup="stopDrawing" @mouseleave="stopDrawing"></canvas>
+                    <canvas ref="annotationCanvasRef" class="annotation-canvas" @mousedown="startAnnotation"
+                        @mousemove="draw" @mouseup="stopAnnotation" @mouseleave="stopAnnotation"
+                        @dblclick="handleCanvasDoubleClick"></canvas>
+                    <div v-if="showTextInput" class="text-input-container" :style="textInputStyle">
+                        <n-input ref="textInputRef" v-model:value="textContent" type="textarea"
+                            :autosize="{ minRows: 1 }" @blur="confirmTextAnnotation"
+                            @keydown.enter.prevent="confirmTextAnnotation" />
+                    </div>
                 </div>
             </template>
             <template v-else>
@@ -71,9 +77,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch, shallowRef, onUnmounted } from 'vue'
+import { ref, computed, onMounted, watch, shallowRef, onUnmounted, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
-import { NEmpty, NText, NButton, NSpace, NInputNumber, NSelect, NButtonGroup, NDivider, NColorPicker, NIcon } from 'naive-ui'
+import { NEmpty, NText, NButton, NSpace, NInputNumber, NSelect, NButtonGroup, NDivider, NColorPicker, NIcon, NInput } from 'naive-ui'
 import * as pdfjsLib from 'pdfjs-dist'
 import workerSrc from 'pdfjs-dist/build/pdf.worker.js?url'
 import { Pencil, TextOutline, TrashOutline, MoonOutline, SunnyOutline } from '@vicons/ionicons5'
@@ -113,8 +119,22 @@ const isDrawing = ref(false)
 const lastX = ref(0)
 const lastY = ref(0)
 
-// 存储每页的批注
-const annotations = ref<Map<number, ImageData>>(new Map())
+// 定义文字批注的类型
+interface TextAnnotation {
+    x: number
+    y: number
+    text: string
+    color: string
+}
+
+// 修改批注存储结构
+interface PageAnnotations {
+    imageData: ImageData
+    texts: TextAnnotation[]
+}
+
+// 修改存储结构
+const annotations = ref<Map<number, PageAnnotations>>(new Map())
 
 // 设置批注模式
 const setAnnotationMode = (mode: 'draw' | 'text') => {
@@ -374,6 +394,100 @@ const isDarkTheme = ref(false)
 const toggleTheme = () => {
     isDarkTheme.value = !isDarkTheme.value
 }
+
+// 添加文字批注相关的状态
+const showTextInput = ref(false)
+const textContent = ref('')
+const textPosition = ref({ x: 0, y: 0 })
+const textInputRef = ref<any>(null)
+const editingTextIndex = ref<number>(-1)
+
+// 修改开始批注函数
+const startAnnotation = (e: MouseEvent) => {
+    if (!annotationMode.value || !annotationCanvasRef.value) return
+
+    if (annotationMode.value === 'draw') {
+        startDrawing(e)
+    } else if (annotationMode.value === 'text') {
+        const canvas = annotationCanvasRef.value
+        const rect = canvas.getBoundingClientRect()
+
+        // 计算相对于画布的实际位置
+        const scaleX = canvas.width / rect.width
+        const scaleY = canvas.height / rect.height
+
+        // 计算鼠标在画布上的实际位置
+        const x = (e.clientX - rect.left) * scaleX
+        const y = (e.clientY - rect.top) * scaleY
+
+        textPosition.value = { x, y }
+        showTextInput.value = true
+
+        // 等待 DOM 更新后聚焦输入框
+        nextTick(() => {
+            textInputRef.value?.focus()
+        })
+    }
+}
+
+// 修改停止批注函数
+const stopAnnotation = (e: MouseEvent) => {
+    if (annotationMode.value === 'draw') {
+        stopDrawing()
+    }
+}
+
+// 确认文字批注
+const confirmTextAnnotation = () => {
+    if (!textContent.value.trim() || !annotationCanvasRef.value) return
+
+    const ctx = annotationCanvasRef.value.getContext('2d')
+    if (!ctx) return
+
+    // 设置文字样式
+    ctx.font = '16px Arial'
+    ctx.fillStyle = annotationColor.value
+    ctx.textBaseline = 'top'
+
+    // 绘制文字
+    ctx.fillText(textContent.value, textPosition.value.x, textPosition.value.y)
+
+    // 保存批注
+    const imageData = ctx.getImageData(
+        0,
+        0,
+        annotationCanvasRef.value.width,
+        annotationCanvasRef.value.height
+    )
+    annotations.value.set(currentPage.value, imageData)
+
+    // 重置状态
+    showTextInput.value = false
+    textContent.value = ''
+}
+
+// 修改文字输入容器的样式计算
+const textInputStyle = computed(() => {
+    if (!annotationCanvasRef.value) return {}
+
+    const canvas = annotationCanvasRef.value
+    const rect = canvas.getBoundingClientRect()
+
+    // 计算缩放比例
+    const scaleX = rect.width / canvas.width
+    const scaleY = rect.height / canvas.height
+
+    // 将画布坐标转换为屏幕坐标
+    const screenX = textPosition.value.x * scaleX
+    const screenY = textPosition.value.y * scaleY
+
+    return {
+        left: `${screenX}px`,
+        top: `${screenY}px`,
+        transform: `scale(${scaleX})`,
+        transformOrigin: 'left top'
+    }
+})
 </script>
 
 <style scoped>
@@ -591,6 +705,35 @@ canvas {
 
 /* 调整分页数字的颜色 */
 .dark-theme span {
+    color: #fff;
+}
+
+.text-input-container {
+    position: absolute;
+    z-index: 2;
+    min-width: 200px;
+    max-width: 400px;
+    pointer-events: auto;
+}
+
+:deep(.n-input) {
+    background-color: transparent;
+    transform-origin: left top;
+}
+
+:deep(.n-input__textarea-el) {
+    background-color: rgba(255, 255, 255, 0.9);
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 16px;
+    line-height: 1.5;
+    resize: both;
+}
+
+.dark-theme :deep(.n-input__textarea-el) {
+    background-color: rgba(36, 36, 36, 0.9);
+    border-color: #444;
     color: #fff;
 }
 </style>
