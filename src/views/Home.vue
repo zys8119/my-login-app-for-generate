@@ -20,7 +20,7 @@
 <script setup lang="ts">
 import { useRouter } from 'vue-router'
 import { NCard, NIcon } from 'naive-ui'
-import { GameController, Brush, GridOutline } from '@vicons/ionicons5'
+import { GameController, Brush, GridOutline, Document } from '@vicons/ionicons5'
 
 const router = useRouter()
 
@@ -42,6 +42,12 @@ const routes = [
         title: '画布编辑器',
         description: '可视化画布编辑工具，支持拖拽、缩放和编辑元素。',
         icon: Brush
+    },
+    {
+        path: '/pdf-preview',
+        title: 'PDF在线预览',
+        description: '支持在线预览和浏览PDF文件内容。',
+        icon: Document
     }
 ]
 
@@ -98,5 +104,41 @@ const navigateTo = (path: string) => {
     font-size: 14px;
     color: #606266;
     line-height: 1.5;
+}
+
+.feature-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 20px;
+    margin-top: 20px;
+}
+
+.feature-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: 16px;
+    background-color: #fff;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    width: calc(50% - 10px);
+    box-sizing: border-box;
+}
+
+.feature-icon {
+    font-size: 24px;
+    margin-bottom: 8px;
+}
+
+.feature-title {
+    font-size: 16px;
+    font-weight: bold;
+    margin-bottom: 8px;
+}
+
+.feature-desc {
+    font-size: 14px;
+    color: #606266;
 }
 </style>

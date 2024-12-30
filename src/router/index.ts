@@ -4,6 +4,7 @@ import Home from '../views/Home.vue'
 import Canvas from '../views/Canvas.vue'
 import Tetris from '../views/Tetris.vue'
 import Game2048 from '../views/Game2048.vue'
+import PdfPreview from '../views/PdfPreview.vue'
 
 declare module 'vue-router' {
   interface RouteMeta {
@@ -55,6 +56,14 @@ const routes: RouteRecordRaw[] = [
       title: '2048'
     },
     component: Game2048
+  },
+  {
+    path: '/pdf-preview',
+    name: 'PdfPreview',
+    meta: {
+      title: 'PDF在线预览'
+    },
+    component: PdfPreview
   }
 ]
 
